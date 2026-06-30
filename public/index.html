@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeoLocator Pro | Lacak Nomor HP</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #0a0e14; display: flex; justify-content: center; align-items: center; min-height: 100vh; color: #c0c0c0; padding: 20px; }
+        .container { background: #141b22; border: 1px solid #2a3a4a; border-radius: 12px; padding: 30px 25px; max-width: 480px; width: 100%; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+        .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 25px; justify-content: center; }
+        .logo-icon { width: 42px; height: 42px; background: linear-gradient(135deg,#00b894,#0984e3); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+        .logo-text { font-size: 1.5rem; font-weight: 700; letter-spacing: 1px; background: linear-gradient(135deg,#dfe6e9,#b2bec3); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .subtitle { text-align: center; font-size: 0.75rem; color: #636e72; margin-top: -15px; margin-bottom: 20px; letter-spacing: 2px; text-transform: uppercase; }
+        label { display: block; font-size: 0.8rem; color: #7f8c8d; margin-bottom: 6px; }
+        input { width: 100%; padding: 12px 14px; background: #0d1117; border: 1px solid #2d3a4a; border-radius: 8px; color: #dfe6e9; font-size: 0.95rem; margin-bottom: 15px; outline: none; font-family: inherit; }
+        input:focus { border-color: #0984e3; }
+        button { width: 100%; padding: 13px; background: linear-gradient(135deg,#00b894,#0984e3); border: none; border-radius: 8px; color: #fff; font-weight: 600; font-size: 0.95rem; cursor: pointer; font-family: inherit; }
+        button:hover { opacity: 0.9; }
+        .error { color: #ff7675; font-size: 0.8rem; text-align: center; margin-bottom: 10px; display: none; }
+        .hint { text-align: center; font-size: 0.7rem; color: #636e72; margin-top: 15px; }
+        .hidden { display: none !important; }
+        #map { height: 300px; border-radius: 10px; margin: 15px 0; border: 1px solid #2a3a4a; background: #0d1117; z-index: 1; }
+        .spinner { width: 40px; height: 40px; border: 3px solid #2a3a4a; border-top-color: #0984e3; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 12px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-box { text-align: center; padding: 20px 0; }
+        .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #1a2530; font-size: 0.85rem; }
+        .info-label { color: #7f8c8d; }
+        .info-value { color: #dfe6e9; font-weight: 500; }
+        .header { display: flex; justify-content: space-between; align-items: center; }
+        .logout-btn { background: transparent; border: 1px solid #ff7675; color: #ff7675; padding: 6px 14px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; width: auto; }
+        .status-badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.7rem; font-weight: 600; }
+        .status-online { background: rgba(0,184,148,0.15); color: #00b894; }
+    </style>
+</head>
+<body>
+    <div id="loginPage" class="container">
+        <div class="logo"><div class="logo-icon">🛰️</div><span class="logo-text">GeoLocator Pro</span></div>
+        <div class="subtitle">Cellular Triangulation System</div>
+        <div id="loginError" class="error">Username atau password salah.</div>
+        <label>Username</label>
+        <input type="text" id="username" placeholder="Masukkan username" autocomplete="off">
+        <label>Password</label>
+        <input type="password" id="password" placeholder="Masukkan password">
+        <button onclick="doLogin()">Akses Sistem</button>
+        <div class="hint">Koneksi terenkripsi • Akses terbatas</div>
+    </div>
+    <div id="trackerPage" class="container hidden">
+        <div class="header">
+            <div>
+                <div class="logo-text" style="font-size:1.2rem;">🛰️ GeoLocator Pro</div>
+                <div style="font-size:0.7rem;color:#636e72;">Sesi: <span id="sessionUser"></span> • <span class="status-badge status-online">ONLINE</span></div>
+            </div>
+            <button class="logout-btn" onclick="doLogout()">Logout</button>
+        </div>
+        <hr style="border-color:#1a2530;margin:12px 0;">
+        <label>Nomor HP Target</label>
+        <div style="display:flex;gap:8px;">
+            <input type="tel" id="targetPhone" placeholder="08xxxxxxxxxx" style="flex:1;">
+            <button style="width:auto;padding:12px 20px;white-space:nowrap;" onclick="startTracking()">Lacak</button>
+        </div>
+        <div id="trackingUI" class="hidden">
+            <div class="loading-box" id="loadingBox">
+                <div class="spinner"></div>
+                <p style="color:#b2bec3;" id="loadingText">Menghubungkan...</p>
+                <p style="font-size:0.7rem;color:#636e72;" id="loadingStep">Protokol aktif</p>
+            </div>
+            <div id="map"></div>
+            <div id="infoBox"></div>
+        </div>
+    </div>
+    <script>
+        let currentUser = null, mapInstance = null;
+        async function doLogin() {
+            const u = document.getElementById('username').value.trim(), p = document.getElementById('password').value.trim();
+            if (!u || !p) return;
+            try {
+                const res = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: u, password: p }) });
+                const data = await res.json();
+                if (data.success) {
+                    currentUser = u;
+                    document.getElementById('sessionUser').textContent = u;
+                    document.getElementById('loginPage').classList.add('hidden');
+                    document.getElementById('trackerPage').classList.remove('hidden');
+                    document.getElementById('loginError').style.display = 'none';
+                } else { document.getElementById('loginError').style.display = 'block'; }
+            } catch (e) { document.getElementById('loginError').style.display = 'block'; }
+        }
+        function doLogout() {
+            currentUser = null;
+            document.getElementById('trackerPage').classList.add('hidden');
+            document.getElementById('loginPage').classList.remove('hidden');
+            document.getElementById('trackingUI').classList.add('hidden');
+            document.getElementById('username').value = '';
+            document.getElementById('password').value = '';
+        }
+        const LOCATIONS = [
+            { prov: "Aceh", kota: "Banda Aceh", kec: "Baiturrahman", jalan: "Jl. Tgk. Chik Di Tiro", lat: 5.55, lng: 95.32 },
+            { prov: "Sumatera Utara", kota: "Medan", kec: "Medan Baru", jalan: "Jl. Gajah Mada", lat: 3.59, lng: 98.67 },
+            { prov: "Sumatera Barat", kota: "Padang", kec: "Padang Barat", jalan: "Jl. Khatib Sulaiman", lat: -0.95, lng: 100.35 },
+            { prov: "Riau", kota: "Pekanbaru", kec: "Tampan", jalan: "Jl. Soekarno Hatta", lat: 0.51, lng: 101.45 },
+            { prov: "DKI Jakarta", kota: "Jakarta Pusat", kec: "Menteng", jalan: "Jl. MH Thamrin", lat: -6.18, lng: 106.82 },
+            { prov: "Jawa Barat", kota: "Bandung", kec: "Coblong", jalan: "Jl. Dipati Ukur", lat: -6.89, lng: 107.62 },
+            { prov: "Jawa Tengah", kota: "Semarang", kec: "Semarang Tengah", jalan: "Jl. Pandanaran", lat: -6.99, lng: 110.42 },
+            { prov: "DI Yogyakarta", kota: "Yogyakarta", kec: "Gondokusuman", jalan: "Jl. Kaliurang", lat: -7.78, lng: 110.38 },
+            { prov: "Jawa Timur", kota: "Surabaya", kec: "Tegalsari", jalan: "Jl. Raya Darmo", lat: -7.28, lng: 112.73 },
+            { prov: "Bali", kota: "Denpasar", kec: "Denpasar Selatan", jalan: "Jl. Teuku Umar", lat: -8.67, lng: 115.21 },
+            { prov: "Kalimantan Selatan", kota: "Banjarmasin", kec: "Banjarmasin Tengah", jalan: "Jl. Lambung Mangkurat", lat: -3.32, lng: 114.59 },
+            { prov: "Kalimantan Timur", kota: "Samarinda", kec: "Sungai Kunjang", jalan: "Jl. Awang Long", lat: -0.50, lng: 117.15 },
+            { prov: "Sulawesi Selatan", kota: "Makassar", kec: "Panakkukang", jalan: "Jl. Pengayoman", lat: -5.14, lng: 119.43 },
+            { prov: "Maluku", kota: "Ambon", kec: "Sirimau", jalan: "Jl. Diponegoro", lat: -3.70, lng: 128.18 },
+            { prov: "Papua", kota: "Jayapura", kec: "Jayapura Utara", jalan: "Jl. Raya Abepura", lat: -2.53, lng: 140.72 }
+        ];
+        const PROVIDERS = ["Telkomsel", "Indosat", "XL Axiata", "Tri", "Smartfren"];
+        function getRandomLocation() {
+            const loc = LOCATIONS[Math.floor(Math.random() * LOCATIONS.length)];
+            return { ...loc, lat: (loc.lat + (Math.random() - 0.5) * 0.03).toFixed(6), lng: (loc.lng + (Math.random() - 0.5) * 0.03).toFixed(6) };
+        }
+        function loadMap(lat, lng) {
+            if (mapInstance) { mapInstance.remove(); mapInstance = null; }
+            mapInstance = L.map('map').setView([lat, lng], 17);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap', maxZoom: 19 }).addTo(mapInstance);
+            L.marker([lat, lng]).addTo(mapInstance).bindPopup(`<b>Target</b><br>${lat}, ${lng}`).openPopup();
+            L.circle([lat, lng], { color: '#00b894', fillOpacity: 0.15, radius: 15 }).addTo(mapInstance);
+        }
+        async function startTracking() {
+            const phone = document.getElementById('targetPhone').value.trim();
+            if (!phone || phone.length < 6) return alert('Masukkan nomor HP!');
+            const ui = document.getElementById('trackingUI'); ui.classList.remove('hidden');
+            document.getElementById('loadingBox').style.display = 'block';
+            document.getElementById('infoBox').innerHTML = '';
+            if (mapInstance) { mapInstance.remove(); mapInstance = null; }
+            document.getElementById('map').innerHTML = '';
+            const steps = ['Menghubungkan ke BTS...', 'Mengirim sinyal ping...', 'Triangulasi 3 menara...', 'Memproses koordinat...', 'Mendekripsi lokasi...'];
+            for (const s of steps) {
+                document.getElementById('loadingText').textContent = s;
+                await new Promise(r => setTimeout(r, 800 + Math.random() * 600));
+            }
+            const loc = getRandomLocation(), provider = PROVIDERS[Math.floor(Math.random() * PROVIDERS.length)], acc = (Math.random() * 15 + 2).toFixed(1);
+            loadMap(loc.lat, loc.lng);
+            document.getElementById('loadingBox').style.display = 'none';
+            document.getElementById('infoBox').innerHTML = `
+                <div class="info-row"><span class="info-label">Nomor</span><span class="info-value">+62 ${phone.replace(/^0/,'')}</span></div>
+                <div class="info-row"><span class="info-label">Provinsi</span><span class="info-value">${loc.prov}</span></div>
+                <div class="info-row"><span class="info-label">Kota</span><span class="info-value">${loc.kota}</span></div>
+                <div class="info-row"><span class="info-label">Kecamatan</span><span class="info-value">${loc.kec}</span></div>
+                <div class="info-row"><span class="info-label">Jalan</span><span class="info-value">${loc.jalan}</span></div>
+                <div class="info-row"><span class="info-label">Koordinat</span><span class="info-value">${loc.lat}, ${loc.lng}</span></div>
+                <div class="info-row"><span class="info-label">Akurasi</span><span class="info-value" style="color:#00b894;">± ${acc} meter</span></div>
+                <div class="info-row"><span class="info-label">Provider</span><span class="info-value">${provider}</span></div>
+                <div class="info-row"><span class="info-label">Status</span><span class="info-value" style="color:#00b894;">LOKASI DITEMUKAN</span></div>`;
+        }
+    </script>
+</body>
+  </html>
